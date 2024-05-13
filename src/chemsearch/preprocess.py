@@ -217,10 +217,11 @@ def process_eggnog_annotation_files(
     input_directory: str, output_directory: str
 ) -> None:
     """
-    Processes eggNOG annotatiion TSV files in the specified input directory, extracting specific columns from each file,
+    Processes eggNOG annotation TSV files in the specified input directory, extracting specific columns from each file,
     cleaning the data, and saving the results to a new TSV file in the specified output directory.
     The function assumes that relevant data starts from the fifth row and that the files have
     '.annotations.tsv' in their names, which is replaced with '.tsv' in the output.
+    It extracts the genome ID from the first part of the '#query' names, until the fifth "_".
 
     Parameters:
         input_directory (str): Path to the directory containing the input TSV files.
@@ -233,7 +234,19 @@ def process_eggnog_annotation_files(
             input_file_path = os.path.join(input_directory, filename)
             df = pd.read_csv(input_file_path, sep="\t", header=4)
             if "#query" in df.columns and "EC" in df.columns:
-                cleaned_df = df[["#query", "EC"]].iloc[:-3, :]
+                # Process to extract genome_id and rename columns
+                df["genome_id"] = df["#query"].apply(
+                    lambda x: "_".join(x.split("_")[:5])
+                )
+                df["protein_id"] = df["#query"]
+                cleaned_df = df[["genome_id", "protein_id", "EC"]].iloc[:-3, :]
+                cleaned_df.columns = ["genome_id", "protein_id", "EC"]
+
+                # Handling EC numbers that are dashes or empty
+                cleaned_df["EC"] = cleaned_df["EC"].apply(
+                    lambda x: "" if x in ["-", ""] else x
+                )
+
                 output_filename = filename.replace(".annotations.tsv", ".tsv")
                 output_file_path = os.path.join(output_directory, output_filename)
                 cleaned_df.to_csv(output_file_path, sep="\t", index=False)
@@ -241,34 +254,36 @@ def process_eggnog_annotation_files(
 
 def parse_genome_ec_numbers(
     directory_path: str,
-) -> Dict[str, Dict[str, List[str]]]:
+) -> Dict[str, Dict[str, Dict[str, List[str]]]]:
     """
-    Parses multiple TSV files from a given directory, each containing protein sequence IDs and their associated EC numbers.
-    Returns a dictionary of dictionaries where the outer keys correspond to file names (without extensions), and
-    each inner dictionary maps protein IDs to lists of EC numbers. Entries with a dash "-" or empty string as the EC number
-    are treated as having no EC numbers.
+    Parses multiple TSV files from a given directory, each containing genome IDs, protein sequence IDs and their associated EC numbers.
+    Returns a dictionary where the outer keys correspond to genome IDs, and each inner dictionary maps protein IDs to lists of EC numbers.
+    Entries with a dash "-" or empty string as the EC number are treated as having no EC numbers.
 
     Args:
-    directory_path (str): The path to the directory containing TSV files.
+        directory_path (str): The path to the directory containing TSV files.
 
     Returns:
-    Dict[str, Dict[str, List[str]]]: A dictionary mapping filenames to dictionaries of protein IDs and lists of EC numbers.
+        Dict[str, Dict[str, List[str]]]: A dictionary mapping genome IDs to dictionaries of protein IDs and lists of EC numbers.
     """
     genomes = {}
     for filename in os.listdir(directory_path):
         if filename.endswith(".tsv"):
             filepath = os.path.join(directory_path, filename)
-            ec_dict = {}
             with open(filepath, "r", newline="") as file:
                 tsv_reader = csv.reader(file, delimiter="\t")
                 next(tsv_reader)  # Skip the header row
                 for row in tsv_reader:
-                    protein_id = row[0]
-                    ec_numbers = row[1].strip()
+                    genome_id = row[0]
+                    protein_id = row[1]
+                    ec_numbers = row[2].strip()
                     if ec_numbers == "-" or not ec_numbers:
-                        ec_dict[protein_id] = []
+                        ec_list = []
                     else:
-                        ec_dict[protein_id] = ec_numbers.split(",")
-            file_base_name = os.path.splitext(filename)[0]
-            genomes[file_base_name] = ec_dict
+                        ec_list = ec_numbers.split(",")
+
+                    if genome_id not in genomes:
+                        genomes[genome_id] = {}
+                    genomes[genome_id][protein_id] = ec_list
+
     return genomes
