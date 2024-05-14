@@ -4,7 +4,7 @@
 
 # Search genomes for chemical synthetic potential with chemsearch
 
-
+See the [example notebook](notebooks/example.ipynb) for a demonstration of how to use the `chemsearch` package to search for chemical synthetic potential in a genome.
 
 ## Annotate genomes with EC numbers
 
